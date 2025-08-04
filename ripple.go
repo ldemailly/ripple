@@ -7,45 +7,18 @@ import (
 	"image/color"
 	"math"
 	"math/rand/v2"
-	"strconv"
-	"strings"
 
 	"fortio.org/terminal/ansipixels"
+	"fortio.org/terminal/ansipixels/tcolor"
 )
 
-const (
-	red   = "\033[38;2;250;0;0m"
-	blue  = "\033[38;2;0;0;250m"
-	green = "\033[38;2;0;250;0m"
-)
-
-var colorsToChoose = [...]string{
+var colorsToChoose = [...]tcolor.RGBColor{
 	randomColor(),
 	randomColor(),
 }
 
-func randomColor() string {
-	return fmt.Sprintf("\033[38;2;%d;%d;%dm", rand.IntN(250), rand.IntN(250), rand.IntN(250))
-}
-
-func toRGB(s string) (int, int, int) {
-	s = s[6 : len(s)-1]
-	fields := strings.Split(s, ";")[1:]
-
-	r, err := strconv.Atoi(strings.Trim(fields[0], " "))
-	if err != nil {
-		panic(strings.Trim(fields[0], " "))
-	}
-	g, err := strconv.Atoi(strings.Trim(fields[1], " "))
-	if err != nil {
-		panic("2")
-	}
-	b, err := strconv.Atoi(strings.Trim(fields[2], " "))
-	if err != nil {
-		panic("3")
-	}
-
-	return r, g, b
+func randomColor() tcolor.RGBColor {
+	return tcolor.HSLToRGB(rand.Float64(), 0.75, 0.6)
 }
 
 func main() {
@@ -53,39 +26,27 @@ func main() {
 	flag.Parse()
 	colorCount := 0
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
-
-	err := ap.GetSize()
-	paused := false
-	if err != nil {
-		panic("can't get term size")
-	}
-	ap.MouseClickOn()
-	ap.OnResize = func() error {
-		return ap.GetSize()
-	}
-	defer func() {
-		ap.MouseTrackingOff()
-
-		ap.MoveCursor(0, 0)
-		ap.MoveCursor(0, ap.H-2)
-		ap.Restore()
-	}()
-
-	err = ap.Open()
+	err := ap.Open()
 	if err != nil {
 		panic("can't open")
 	}
+	defer func() {
+		ap.MouseClickOff()
+		ap.MoveCursor(0, ap.H-2)
+		ap.ShowCursor()
+		ap.Restore()
+	}()
+	ap.MouseClickOn()
+	ap.HideCursor()
+
+	paused := false
 	clicks := make(map[[2]int]int)
 	rightClicks := make(map[[2]int]int)
 	colors := make(map[[2]int]string)
 	ap.StartSyncMode()
 	ap.ClearScreen()
-	ap.EndSyncMode()
-	ap.HideCursor()
-	list := make([][2]int, 0)
-	orderedByChosen := &list
+	var list [][2]int
 	rightlist := make([][2]int, 0)
-	rightorderedByChosen := &rightlist
 	last := make([][][3]int, ap.W)
 	for i := range last {
 		last[i] = make([][3]int, ap.H)
@@ -105,11 +66,12 @@ func main() {
 			}
 		}
 		if ap.LeftClick() {
+			q
 			clicks[[2]int{ap.Mx, ap.My * 2}] = 0
-			r, g, b := toRGB(colorsToChoose[0])
+			c := colorsToChoose[0]
 			colors[[2]int{ap.Mx, ap.My * 2}] = fmt.Sprintf("\033[38;2;%d;%d;%dm", (r+colorCount)%264, (g+colorCount)%264, (b+colorCount)%264)
 			colorCount = (colorCount + 100) % 264
-			*orderedByChosen = append(*orderedByChosen, [2]int{ap.Mx, ap.My * 2})
+			list = append(list, [2]int{ap.Mx, ap.My * 2})
 		} else if ap.RightClick() {
 			rightClicks[[2]int{ap.Mx, ap.My * 2}] = 0
 			// colors[[2]int{ap.Mx, ap.My * 2}] = colorsToChoose[colorChosen]
@@ -128,10 +90,8 @@ func main() {
 		case ' ':
 			paused = !paused
 		case 'c':
-			ap.StartSyncMode()
 			clear(clicks)
 			ap.ClearScreen()
-			ap.EndSyncMode()
 		case 'q':
 			return
 		}
@@ -139,8 +99,8 @@ func main() {
 }
 
 // circles are hollow
-func drawCircles(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, orderedByChosen *[][2]int, img *image.RGBA) {
-	for _, coords := range *orderedByChosen {
+func drawCircles(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, orderedByChosen [][2]int, img *image.RGBA) {
+	for _, coords := range orderedByChosen {
 		radius := clicks[coords]
 		if radius < 1 {
 			continue
